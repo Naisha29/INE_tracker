@@ -1,0 +1,49 @@
+name: Scheduled Product Price & Stock Scraper
+
+on:
+  schedule:
+    # Runs every 2 hours
+    - cron: '0 */2 * * *'
+  workflow_dispatch:
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js Environment
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Install Playwright Browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Run Scheduled Scraper Execution
+        env:
+          MOCK_STORE_URL: 'https://demo.inelabteamdev.com'
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          node -e "
+          const { scrapeProduct } = require('./server/scraper');
+          const DB = require('./server/db');
+          async function runCron() {
+            const products = await DB.getTrackedProducts();
+            console.log('Running GitHub Actions scheduled scrape for', products.length, 'products...');
+            for (const p of products) {
+              if (p.is_active) {
+                await scrapeProduct(p, false);
+              }
+            }
+          }
+          runCron().then(() => process.exit(0)).catch(err => { console.error(err); process.exit(1); });
+          "
