@@ -11,12 +11,30 @@ async function runHeadedScrape(productId = '2475', optionLabel = '1-pack') {
   console.log(`Target Product ID: ${productId}`);
   console.log(`Target Option Label: ${optionLabel}`);
   console.log(`Store URL: ${STORE_BASE_URL}/item/${productId}`);
-  console.log('Launching browser in HEADED MODE (visible window)...');
 
-  const browser = await chromium.launch({
-    headless: false,
-    slowMo: 350 // Slow down operations so viewers can easily see cursor & clicks!
-  });
+  let browser;
+  let isCloudHeadless = false;
+
+  try {
+    console.log('Launching browser in HEADED MODE (visible window)...');
+    browser = await chromium.launch({
+      headless: false,
+      slowMo: 350
+    });
+  } catch (err) {
+    console.log('[Notice] Cloud server detected (no physical display attached).');
+    console.log('[Notice] Running in Observable Cloud Mode for web terminal display...');
+    try {
+      browser = await chromium.launch({
+        headless: true,
+        slowMo: 100
+      });
+      isCloudHeadless = true;
+    } catch (fallbackErr) {
+      console.error('❌ Could not launch browser:', fallbackErr.message);
+      return;
+    }
+  }
 
   const context = await browser.newContext({
     viewport: { width: 1280, height: 800 },
@@ -28,7 +46,7 @@ async function runHeadedScrape(productId = '2475', optionLabel = '1-pack') {
   try {
     const itemUrl = `${STORE_BASE_URL}/item/${productId}`;
     console.log(`[Step 1] Navigating to ${itemUrl}...`);
-    await page.goto(itemUrl, { waitUntil: 'networkidle' });
+    await page.goto(itemUrl, { waitUntil: 'networkidle', timeout: 15000 });
     await page.waitForTimeout(1000);
 
     console.log(`[Step 2] Selecting Option "${optionLabel}"...`);
@@ -51,10 +69,7 @@ async function runHeadedScrape(productId = '2475', optionLabel = '1-pack') {
       console.log('[Step 4] Simulating mouse moves & Dwell time to unlock WASM/price trap...');
       const box = await priceBtn.boundingBox();
       if (box) {
-        // Move mouse to button center
         await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-        
-        // Jitter cursor over button
         for (let i = 0; i < 35; i++) {
           const offsetX = (i % 5) * 4 - 10;
           const offsetY = (i % 3) * 4 - 6;
@@ -78,22 +93,23 @@ async function runHeadedScrape(productId = '2475', optionLabel = '1-pack') {
     console.log('\n===========================================================');
     console.log('                SCRAPING RESULT SUMMARY                    ');
     console.log('===========================================================');
-    console.log(`Product Name: Lumeno Network Switch Flex`);
     console.log(`Price Extracted: ${priceMatch ? priceMatch[0] : 'FAILED'}`);
     console.log(`Stock Status:    ${stockMatch ? stockMatch[0].trim() : 'FAILED'}`);
     console.log('===========================================================');
-    console.log('Keeping browser window open for 5 seconds for observation...');
-    await page.waitForTimeout(5000);
+
+    if (!isCloudHeadless) {
+      console.log('Keeping browser window open for observation...');
+      await page.waitForTimeout(3000);
+    }
 
   } catch (err) {
     console.error('❌ Error during Headed Scrape Run:', err.message);
   } finally {
     await browser.close();
-    console.log('Browser closed. Headed run complete.');
+    console.log('Headed run complete.');
   }
 }
 
-// Allow CLI arguments: node server/headed_run.js [productId] [optionLabel]
 const args = process.argv.slice(2);
 const productId = args[0] || '2475';
 const optionLabel = args[1] || '1-pack';
